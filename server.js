@@ -9,12 +9,13 @@ const PORT = process.env.PORT || 3000;
 const PLANNING_URL = "https://serveur-plan.onrender.com/planning";
 
 /**
- * Convertit une date locale (France) en format ICS local
- * Format final : YYYYMMDDTHHMMSS
- * (sans Z, sans UTC)
+ * Convertit une date locale (France) en UTC pour ICS
+ * Format final : YYYYMMDDTHHMMSSZ
+ * → Google Calendar Android interprète correctement
  */
-function toLocalICS(date, hour, minute) {
-  const d = new Date(
+function toICS_UTC(date, hour, minute) {
+  // Date locale France
+  const local = new Date(
     date.getFullYear(),
     date.getMonth(),
     date.getDate(),
@@ -24,11 +25,11 @@ function toLocalICS(date, hour, minute) {
     0
   );
 
-  // Format ISO local "YYYY-MM-DD HH:MM:SS"
-  const isoLocal = d.toLocaleString("sv-SE", { hour12: false });
+  // Conversion automatique en UTC
+  const utc = new Date(local.getTime() - local.getTimezoneOffset() * 60000);
 
-  // Conversion en ICS "YYYYMMDDTHHMMSS"
-  return isoLocal.replace(" ", "T").replace(/[-:]/g, "");
+  // Format ICS UTC : YYYYMMDDTHHMMSSZ
+  return utc.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
 }
 
 // UID stable
@@ -96,8 +97,8 @@ app.get("/jr.ics", async (req, res) => {
       if (matinSalle) {
         events.push({
           title: `JR — Matin — ${matinSalle}`,
-          start: toLocalICS(jsDate, 8, 0),
-          end: toLocalICS(jsDate, 13, 0),
+          start: toICS_UTC(jsDate, 8, 0),
+          end: toICS_UTC(jsDate, 13, 0),
         });
       }
 
@@ -105,8 +106,8 @@ app.get("/jr.ics", async (req, res) => {
       if (amSalle) {
         events.push({
           title: `JR — Après‑midi — ${amSalle}`,
-          start: toLocalICS(jsDate, 13, 0),
-          end: toLocalICS(jsDate, 19, 0),
+          start: toICS_UTC(jsDate, 13, 0),
+          end: toICS_UTC(jsDate, 19, 0),
         });
       }
 
@@ -114,8 +115,8 @@ app.get("/jr.ics", async (req, res) => {
       if (soir.includes("JR")) {
         events.push({
           title: `JR — Astreinte du soir`,
-          start: toLocalICS(jsDate, 19, 0),
-          end: toLocalICS(jsDate, 21, 0),
+          start: toICS_UTC(jsDate, 19, 0),
+          end: toICS_UTC(jsDate, 21, 0),
         });
       }
     }
@@ -129,9 +130,9 @@ PRODID:-//JR//Planning JR Only//FR
 `;
 
     const nowStamp = new Date()
-      .toLocaleString("sv-SE", { hour12: false })
-      .replace(" ", "T")
-      .replace(/[-:]/g, "");
+      .toISOString()
+      .replace(/[-:]/g, "")
+      .split(".")[0] + "Z";
 
     events.forEach((ev, idx) => {
       const uid = makeUID(ev, idx);
@@ -139,8 +140,8 @@ PRODID:-//JR//Planning JR Only//FR
 UID:${uid}
 DTSTAMP:${nowStamp}
 SUMMARY:${ev.title}
-DTSTART;TZID=Europe/Paris:${ev.start}
-DTEND;TZID=Europe/Paris:${ev.end}
+DTSTART:${ev.start}
+DTEND:${ev.end}
 END:VEVENT
 `;
     });
