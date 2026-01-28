@@ -6,15 +6,11 @@ import { JSDOM } from "jsdom";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Autoriser toutes les origines (CORS)
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   next();
 });
 
-// ------------------------------------------------------
-// ROUTE : Génération du fichier ICS pour JR
-// ------------------------------------------------------
 app.get("/jr.ics", async (req, res) => {
   try {
     const url =
@@ -28,7 +24,6 @@ app.get("/jr.ics", async (req, res) => {
 
     const html = await response.text();
 
-    // Parse HTML
     const dom = new JSDOM(html);
     const document = dom.window.document;
 
@@ -72,7 +67,6 @@ app.get("/jr.ics", async (req, res) => {
       let amSalle = "";
       let soir = cells[34] || "";
 
-      // Recherche de JR dans les salles
       for (const salle of SALLES) {
         const matin = cells[index] || "";
         const am = cells[index + 1] || "";
@@ -83,7 +77,6 @@ app.get("/jr.ics", async (req, res) => {
         index += 2;
       }
 
-      // Création des événements ICS
       if (matinSalle) {
         events.push({
           title: `JR — Matin — ${matinSalle}`,
@@ -109,25 +102,26 @@ app.get("/jr.ics", async (req, res) => {
       }
     }
 
-    // Génération ICS
-    ics.createEvents(events, (error, value) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).send("Erreur ICS");
-      }
+    ics.createEvents(
+      events,
+      { tzid: "Europe/Paris" },
+      (error, value) => {
+        if (error) {
+          console.error(error);
+          return res.status(500).send("Erreur ICS");
+        }
 
-      res.setHeader("Content-Type", "text/calendar");
-      res.send(value);
-    });
+        res.setHeader("Content-Type", "text/calendar");
+        res.send(value);
+      }
+    );
+
   } catch (error) {
     console.error("Erreur ICS :", error);
     res.status(500).send("Erreur interne du serveur ICS");
   }
 });
 
-// ------------------------------------------------------
-// Lancement du serveur
-// ------------------------------------------------------
 app.listen(PORT, () => {
   console.log(`Serveur ICS JR actif sur port ${PORT}`);
 });
