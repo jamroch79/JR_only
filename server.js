@@ -10,22 +10,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// ------------------------------------------------------
-// ROUTE : Génération du fichier ICS pour JR (12 mois)
-// ------------------------------------------------------
 app.get("/jr.ics", async (req, res) => {
   try {
     const url =
       "https://intranet.radiologie-lyon.com/fichiers/document/2577_planning_medecins.htm";
 
     const response = await fetch(url);
-
-    if (!response.ok) {
-      return res.status(500).send("Erreur lors de la récupération du planning");
-    }
+    if (!response.ok) return res.status(500).send("Erreur récupération planning");
 
     const html = await response.text();
-
     const dom = new JSDOM(html);
     const document = dom.window.document;
 
@@ -33,34 +26,18 @@ app.get("/jr.ics", async (req, res) => {
     const events = [];
 
     const SALLES = [
-      "RADIO MERMOZ",
-      "ANGIO",
-      "SCANNER1",
-      "SCANNER2",
-      "SCANNER3",
-      "MAMMO",
-      "IRM1",
-      "IRM2",
-      "IRM3",
-      "SANTY",
-      "ST PRIEST",
-      "GERLAND",
-      "ADMIN",
-      "OFF",
-      "VACANCES",
-      "ABSENCES TP"
+      "RADIO MERMOZ", "ANGIO", "SCANNER1", "SCANNER2", "SCANNER3",
+      "MAMMO", "IRM1", "IRM2", "IRM3", "SANTY", "ST PRIEST",
+      "GERLAND", "ADMIN", "OFF", "VACANCES", "ABSENCES TP"
     ];
 
-    // Fenêtre temporelle : aujourd’hui → +12 mois
+    // Fenêtre : aujourd’hui → +6 mois
     const now = new Date();
     const limit = new Date();
-    limit.setMonth(limit.getMonth() + 12);
+    limit.setMonth(limit.getMonth() + 6);
 
     for (const tr of rows) {
-      const cells = Array.from(tr.querySelectorAll("td")).map((td) =>
-        td.textContent.trim()
-      );
-
+      const cells = Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim());
       if (cells.length < 35) continue;
 
       const dateFR = cells[1];
@@ -69,7 +46,6 @@ app.get("/jr.ics", async (req, res) => {
       const [d, m, y] = dateFR.split("/");
       const jsDate = new Date(`${y}-${m}-${d}T00:00:00`);
 
-      // Filtrage 12 mois
       if (jsDate < now || jsDate > limit) continue;
 
       const date = `${y}${m.padStart(2, "0")}${d.padStart(2, "0")}`;
@@ -83,8 +59,8 @@ app.get("/jr.ics", async (req, res) => {
         const matin = cells[index] || "";
         const am = cells[index + 1] || "";
 
-        if (matin.split(/\s+/).includes("JR")) matinSalle = salle;
-        if (am.split(/\s+/).includes("JR")) amSalle = salle;
+        if (matin.includes("JR")) matinSalle = salle;
+        if (am.includes("JR")) amSalle = salle;
 
         index += 2;
       }
@@ -105,7 +81,7 @@ app.get("/jr.ics", async (req, res) => {
         });
       }
 
-      if (soir.split(/\s+/).includes("JR")) {
+      if (soir.includes("JR")) {
         events.push({
           title: `JR — Astreinte du soir`,
           start: `${date}T190000`,
@@ -114,9 +90,7 @@ app.get("/jr.ics", async (req, res) => {
       }
     }
 
-    // ------------------------------------------------------
-    // GÉNÉRATION ICS MANUELLE
-    // ------------------------------------------------------
+    // ICS compact
     let ics = `BEGIN:VCALENDAR
 VERSION:2.0
 CALSCALE:GREGORIAN
