@@ -5,10 +5,39 @@ import { JSDOM } from "jsdom";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  next();
-});
+// Détection automatique heure d'été / heure d'hiver
+function isSummerTime(date) {
+  const year = date.getFullYear();
+
+  // Dernier dimanche de mars → passage à l'heure d'été
+  const march = new Date(year, 2, 31);
+  const lastSundayMarch = march.getDate() - march.getDay();
+
+  // Dernier dimanche d'octobre → retour à l'heure d'hiver
+  const october = new Date(year, 9, 31);
+  const lastSundayOctober = october.getDate() - october.getDay();
+
+  const startSummer = new Date(year, 2, lastSundayMarch, 2, 0, 0);
+  const endSummer = new Date(year, 9, lastSundayOctober, 3, 0, 0);
+
+  return date >= startSummer && date < endSummer;
+}
+
+// Convertit une heure locale (08h, 13h, 19h) en heure UTC corrigée
+function correctedUTC(date, hour, minute) {
+  const d = new Date(date);
+  d.setHours(hour, minute, 0, 0);
+
+  if (isSummerTime(d)) {
+    // Été = UTC+2 → pour afficher 08h locale, on met 06h UTC
+    d.setHours(d.getHours() - 2);
+  } else {
+    // Hiver = UTC+1 → pour afficher 08h locale, on met 07h UTC
+    d.setHours(d.getHours() - 1);
+  }
+
+  return d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+}
 
 app.get("/jr.ics", async (req, res) => {
   try {
@@ -31,11 +60,6 @@ app.get("/jr.ics", async (req, res) => {
       "GERLAND", "ADMIN", "OFF", "VACANCES", "ABSENCES TP"
     ];
 
-    // Fenêtre : aujourd’hui → +6 mois
-    const now = new Date();
-    const limit = new Date();
-    limit.setMonth(limit.getMonth() + 6);
-
     for (const tr of rows) {
       const cells = Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim());
       if (cells.length < 35) continue;
@@ -45,8 +69,6 @@ app.get("/jr.ics", async (req, res) => {
 
       const [d, m, y] = dateFR.split("/");
       const jsDate = new Date(`${y}-${m}-${d}T00:00:00`);
-
-      if (jsDate < now || jsDate > limit) continue;
 
       const date = `${y}${m.padStart(2, "0")}${d.padStart(2, "0")}`;
 
@@ -65,59 +87,46 @@ app.get("/jr.ics", async (req, res) => {
         index += 2;
       }
 
+      // Matin 08h–13h
       if (matinSalle) {
         events.push({
           title: `JR — Matin — ${matinSalle}`,
-          start: `${date}T080000`,
-          end: `${date}T130000`
+          start: correctedUTC(jsDate, 8, 0),
+          end: correctedUTC(jsDate, 13, 0)
         });
       }
 
+      // Après-midi 13h–19h
       if (amSalle) {
         events.push({
           title: `JR — Après‑midi — ${amSalle}`,
-          start: `${date}T130000`,
-          end: `${date}T190000`
+          start: correctedUTC(jsDate, 13, 0),
+          end: correctedUTC(jsDate, 19, 0)
         });
       }
 
+      // Soir 19h–21h
       if (soir.includes("JR")) {
         events.push({
           title: `JR — Astreinte du soir`,
-          start: `${date}T190000`,
-          end: `${date}T210000`
+          start: correctedUTC(jsDate, 19, 0),
+          end: correctedUTC(jsDate, 21, 0)
         });
       }
     }
 
-    // ICS compact
+    // ICS simple, sans fuseau, 100 % compatible Google Calendar
     let ics = `BEGIN:VCALENDAR
 VERSION:2.0
 CALSCALE:GREGORIAN
 METHOD:PUBLISH
-X-WR-TIMEZONE:Europe/Paris
-BEGIN:VTIMEZONE
-TZID:Europe/Paris
-BEGIN:STANDARD
-DTSTART:20241027T030000
-TZOFFSETFROM:+0200
-TZOFFSETTO:+0100
-TZNAME:CET
-END:STANDARD
-BEGIN:DAYLIGHT
-DTSTART:20240331T020000
-TZOFFSETFROM:+0100
-TZOFFSETTO:+0200
-TZNAME:CEST
-END:DAYLIGHT
-END:VTIMEZONE
 `;
 
     for (const ev of events) {
       ics += `BEGIN:VEVENT
 SUMMARY:${ev.title}
-DTSTART;TZID=Europe/Paris:${ev.start}
-DTEND;TZID=Europe/Paris:${ev.end}
+DTSTART:${ev.start}
+DTEND:${ev.end}
 END:VEVENT
 `;
     }
