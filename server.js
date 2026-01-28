@@ -5,13 +5,15 @@ import { JSDOM } from "jsdom";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// URL de ton proxy Render qui renvoie le HTML du planning
-// ⚠️ Remplace par l'URL réelle de ton serveur proxy Render
-const PLANNING_URL = "https://serveur_plan.onrender.com/planning";
+// URL de ton proxy Render
+const PLANNING_URL = "https://serveur-plan.onrender.com/planning";
 
-// Conversion d'une date locale (France) en UTC pour ICS
-function toUTC(date, hour, minute) {
-  // date est un objet Date représentant le jour (en local)
+/**
+ * Convertit une date locale (France) en format ICS local
+ * SANS UTC, SANS Z, SANS décalage.
+ * Format final : YYYYMMDDTHHMMSS
+ */
+function toLocalICS(date, hour, minute) {
   const d = new Date(
     date.getFullYear(),
     date.getMonth(),
@@ -22,11 +24,14 @@ function toUTC(date, hour, minute) {
     0
   );
 
-  // Conversion en ISO UTC, puis format ICS (YYYYMMDDTHHMMSSZ)
-  return d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  // Format ISO local "YYYY-MM-DD HH:MM:SS"
+  const isoLocal = d.toLocaleString("sv-SE", { hour12: false });
+
+  // Conversion en ICS "YYYYMMDDTHHMMSS"
+  return isoLocal.replace(" ", "T").replace(/[-:]/g, "") + "00";
 }
 
-// Génère un UID simple et stable à partir de la date + titre
+// UID stable
 function makeUID(ev, index) {
   return `${ev.start}-${index}@jr-jeanamedee`;
 }
@@ -64,15 +69,12 @@ app.get("/jr.ics", async (req, res) => {
       const [d, m, y] = dateFR.split("/");
       if (!d || !m || !y) continue;
 
-      // Date locale (France) à minuit
+      // Date locale France
       const jsDate = new Date(
         parseInt(y, 10),
         parseInt(m, 10) - 1,
         parseInt(d, 10),
-        0,
-        0,
-        0,
-        0
+        0, 0, 0, 0
       );
 
       let index = 2;
@@ -94,8 +96,8 @@ app.get("/jr.ics", async (req, res) => {
       if (matinSalle) {
         events.push({
           title: `JR — Matin — ${matinSalle}`,
-          start: toUTC(jsDate, 8, 0),
-          end: toUTC(jsDate, 13, 0),
+          start: toLocalICS(jsDate, 8, 0),
+          end: toLocalICS(jsDate, 13, 0),
         });
       }
 
@@ -103,8 +105,8 @@ app.get("/jr.ics", async (req, res) => {
       if (amSalle) {
         events.push({
           title: `JR — Après‑midi — ${amSalle}`,
-          start: toUTC(jsDate, 13, 0),
-          end: toUTC(jsDate, 19, 0),
+          start: toLocalICS(jsDate, 13, 0),
+          end: toLocalICS(jsDate, 19, 0),
         });
       }
 
@@ -112,8 +114,8 @@ app.get("/jr.ics", async (req, res) => {
       if (soir.includes("JR")) {
         events.push({
           title: `JR — Astreinte du soir`,
-          start: toUTC(jsDate, 19, 0),
-          end: toUTC(jsDate, 21, 0),
+          start: toLocalICS(jsDate, 19, 0),
+          end: toLocalICS(jsDate, 21, 0),
         });
       }
     }
@@ -127,9 +129,9 @@ PRODID:-//JR//Planning JR Only//FR
 `;
 
     const nowStamp = new Date()
-      .toISOString()
-      .replace(/[-:]/g, "")
-      .split(".")[0] + "Z";
+      .toLocaleString("sv-SE", { hour12: false })
+      .replace(" ", "T")
+      .replace(/[-:]/g, "") + "00";
 
     events.forEach((ev, idx) => {
       const uid = makeUID(ev, idx);
