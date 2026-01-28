@@ -1,6 +1,5 @@
 import express from "express";
 import fetch from "node-fetch";
-import ics from "ics";
 import { JSDOM } from "jsdom";
 
 const app = express();
@@ -11,6 +10,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// ------------------------------------------------------
+// ROUTE : Génération du fichier ICS pour JR
+// ------------------------------------------------------
 app.get("/jr.ics", async (req, res) => {
   try {
     const url =
@@ -60,7 +62,7 @@ app.get("/jr.ics", async (req, res) => {
       if (!dateFR) continue;
 
       const [d, m, y] = dateFR.split("/");
-      const date = [parseInt(y), parseInt(m), parseInt(d)];
+      const date = `${y}${m.padStart(2, "0")}${d.padStart(2, "0")}`;
 
       let index = 2;
       let matinSalle = "";
@@ -80,41 +82,66 @@ app.get("/jr.ics", async (req, res) => {
       if (matinSalle) {
         events.push({
           title: `JR — Matin — ${matinSalle}`,
-          start: [...date, 8, 0],
-          end: [...date, 13, 0]
+          start: `${date}T080000`,
+          end: `${date}T130000`
         });
       }
 
       if (amSalle) {
         events.push({
           title: `JR — Après‑midi — ${amSalle}`,
-          start: [...date, 13, 0],
-          end: [...date, 19, 0]
+          start: `${date}T130000`,
+          end: `${date}T190000`
         });
       }
 
       if (soir.split(/\s+/).includes("JR")) {
         events.push({
           title: `JR — Astreinte du soir`,
-          start: [...date, 19, 0],
-          end: [...date, 21, 0]
+          start: `${date}T190000`,
+          end: `${date}T210000`
         });
       }
     }
 
-    ics.createEvents(
-      events,
-      { tzid: "Europe/Paris" },
-      (error, value) => {
-        if (error) {
-          console.error(error);
-          return res.status(500).send("Erreur ICS");
-        }
+    // ------------------------------------------------------
+    // GÉNÉRATION ICS MANUELLE
+    // ------------------------------------------------------
+    let ics = `BEGIN:VCALENDAR
+VERSION:2.0
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-TIMEZONE:Europe/Paris
+BEGIN:VTIMEZONE
+TZID:Europe/Paris
+BEGIN:STANDARD
+DTSTART:20241027T030000
+TZOFFSETFROM:+0200
+TZOFFSETTO:+0100
+TZNAME:CET
+END:STANDARD
+BEGIN:DAYLIGHT
+DTSTART:20240331T020000
+TZOFFSETFROM:+0100
+TZOFFSETTO:+0200
+TZNAME:CEST
+END:DAYLIGHT
+END:VTIMEZONE
+`;
 
-        res.setHeader("Content-Type", "text/calendar");
-        res.send(value);
-      }
-    );
+    for (const ev of events) {
+      ics += `BEGIN:VEVENT
+SUMMARY:${ev.title}
+DTSTART;TZID=Europe/Paris:${ev.start}
+DTEND;TZID=Europe/Paris:${ev.end}
+END:VEVENT
+`;
+    }
+
+    ics += "END:VCALENDAR";
+
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.send(ics);
 
   } catch (error) {
     console.error("Erreur ICS :", error);
@@ -125,3 +152,5 @@ app.get("/jr.ics", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Serveur ICS JR actif sur port ${PORT}`);
 });
+
+
