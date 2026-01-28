@@ -11,7 +11,7 @@ app.use((req, res, next) => {
 });
 
 // ------------------------------------------------------
-// ROUTE : Génération du fichier ICS pour JR
+// ROUTE : Génération du fichier ICS pour JR (12 mois)
 // ------------------------------------------------------
 app.get("/jr.ics", async (req, res) => {
   try {
@@ -51,6 +51,11 @@ app.get("/jr.ics", async (req, res) => {
       "ABSENCES TP"
     ];
 
+    // Fenêtre temporelle : aujourd’hui → +12 mois
+    const now = new Date();
+    const limit = new Date();
+    limit.setMonth(limit.getMonth() + 12);
+
     for (const tr of rows) {
       const cells = Array.from(tr.querySelectorAll("td")).map((td) =>
         td.textContent.trim()
@@ -62,6 +67,11 @@ app.get("/jr.ics", async (req, res) => {
       if (!dateFR) continue;
 
       const [d, m, y] = dateFR.split("/");
+      const jsDate = new Date(`${y}-${m}-${d}T00:00:00`);
+
+      // Filtrage 12 mois
+      if (jsDate < now || jsDate > limit) continue;
+
       const date = `${y}${m.padStart(2, "0")}${d.padStart(2, "0")}`;
 
       let index = 2;
@@ -152,5 +162,3 @@ END:VEVENT
 app.listen(PORT, () => {
   console.log(`Serveur ICS JR actif sur port ${PORT}`);
 });
-
-
