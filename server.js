@@ -10,7 +10,8 @@ const PLANNING_URL = "https://serveur-plan.onrender.com/planning";
 
 /**
  * Convertit une date locale (France) en format ICS local
- * Format final : YYYYMMDDTHHMMSS (sans Z, sans UTC)
+ * Format final : YYYYMMDDTHHMMSS
+ * (sans Z, sans UTC)
  */
 function toLocalICS(date, hour, minute) {
   const d = new Date(
@@ -138,8 +139,8 @@ PRODID:-//JR//Planning JR Only//FR
 UID:${uid}
 DTSTAMP:${nowStamp}
 SUMMARY:${ev.title}
-DTSTART:${ev.start}
-DTEND:${ev.end}
+DTSTART;TZID=Europe/Paris:${ev.start}
+DTEND;TZID=Europe/Paris:${ev.end}
 END:VEVENT
 `;
     });
