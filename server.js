@@ -5,13 +5,12 @@ import { JSDOM } from "jsdom";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// URL de ton proxy Render
+// URL du proxy Render
 const PLANNING_URL = "https://serveur-plan.onrender.com/planning";
 
 /**
  * Convertit une date locale (France) en format ICS local
- * SANS UTC, SANS Z, SANS décalage.
- * Format final : YYYYMMDDTHHMMSS
+ * Format final : YYYYMMDDTHHMMSS (sans Z, sans UTC)
  */
 function toLocalICS(date, hour, minute) {
   const d = new Date(
@@ -28,7 +27,7 @@ function toLocalICS(date, hour, minute) {
   const isoLocal = d.toLocaleString("sv-SE", { hour12: false });
 
   // Conversion en ICS "YYYYMMDDTHHMMSS"
-  return isoLocal.replace(" ", "T").replace(/[-:]/g, "") + "00";
+  return isoLocal.replace(" ", "T").replace(/[-:]/g, "");
 }
 
 // UID stable
@@ -131,7 +130,7 @@ PRODID:-//JR//Planning JR Only//FR
     const nowStamp = new Date()
       .toLocaleString("sv-SE", { hour12: false })
       .replace(" ", "T")
-      .replace(/[-:]/g, "") + "00";
+      .replace(/[-:]/g, "");
 
     events.forEach((ev, idx) => {
       const uid = makeUID(ev, idx);
