@@ -5,47 +5,39 @@ import { JSDOM } from "jsdom";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Détection automatique heure d'été / heure d'hiver
-function isSummerTime(date) {
-  const year = date.getFullYear();
+// URL de ton proxy Render qui renvoie le HTML du planning
+// ⚠️ Remplace par l'URL réelle de ton serveur proxy Render
+const PLANNING_URL = "https://serveur_plan.onrender.com/planning";
 
-  // Dernier dimanche de mars → passage à l'heure d'été
-  const march = new Date(year, 2, 31);
-  const lastSundayMarch = march.getDate() - march.getDay();
+// Conversion d'une date locale (France) en UTC pour ICS
+function toUTC(date, hour, minute) {
+  // date est un objet Date représentant le jour (en local)
+  const d = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    hour,
+    minute,
+    0,
+    0
+  );
 
-  // Dernier dimanche d'octobre → retour à l'heure d'hiver
-  const october = new Date(year, 9, 31);
-  const lastSundayOctober = october.getDate() - october.getDay();
-
-  const startSummer = new Date(year, 2, lastSundayMarch, 2, 0, 0);
-  const endSummer = new Date(year, 9, lastSundayOctober, 3, 0, 0);
-
-  return date >= startSummer && date < endSummer;
+  // Conversion en ISO UTC, puis format ICS (YYYYMMDDTHHMMSSZ)
+  return d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
 }
 
-// Convertit une heure locale (08h, 13h, 19h) en heure UTC corrigée
-function correctedUTC(date, hour, minute) {
-  const d = new Date(date);
-  d.setHours(hour, minute, 0, 0);
-
-  if (isSummerTime(d)) {
-    // Été = UTC+2 → pour afficher 08h locale, on met 06h UTC
-    d.setHours(d.getHours() - 2);
-  } else {
-    // Hiver = UTC+1 → pour afficher 08h locale, on met 07h UTC
-    d.setHours(d.getHours() - 1);
-  }
-
-  return d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+// Génère un UID simple et stable à partir de la date + titre
+function makeUID(ev, index) {
+  return `${ev.start}-${index}@jr-jeanamedee`;
 }
 
 app.get("/jr.ics", async (req, res) => {
   try {
-    const url =
-      "https://intranet.radiologie-lyon.com/fichiers/document/2577_planning_medecins.htm";
-
-    const response = await fetch(url);
-    if (!response.ok) return res.status(500).send("Erreur récupération planning");
+    const response = await fetch(PLANNING_URL);
+    if (!response.ok) {
+      console.error("Erreur récupération planning via proxy :", response.status);
+      return res.status(500).send("Erreur récupération planning");
+    }
 
     const html = await response.text();
     const dom = new JSDOM(html);
@@ -61,21 +53,32 @@ app.get("/jr.ics", async (req, res) => {
     ];
 
     for (const tr of rows) {
-      const cells = Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim());
+      const cells = Array.from(tr.querySelectorAll("td")).map(td =>
+        td.textContent.trim()
+      );
       if (cells.length < 35) continue;
 
       const dateFR = cells[1];
       if (!dateFR) continue;
 
       const [d, m, y] = dateFR.split("/");
-      const jsDate = new Date(`${y}-${m}-${d}T00:00:00`);
+      if (!d || !m || !y) continue;
 
-      const date = `${y}${m.padStart(2, "0")}${d.padStart(2, "0")}`;
+      // Date locale (France) à minuit
+      const jsDate = new Date(
+        parseInt(y, 10),
+        parseInt(m, 10) - 1,
+        parseInt(d, 10),
+        0,
+        0,
+        0,
+        0
+      );
 
       let index = 2;
       let matinSalle = "";
       let amSalle = "";
-      let soir = cells[34] || "";
+      const soir = cells[34] || "";
 
       for (const salle of SALLES) {
         const matin = cells[index] || "";
@@ -91,8 +94,8 @@ app.get("/jr.ics", async (req, res) => {
       if (matinSalle) {
         events.push({
           title: `JR — Matin — ${matinSalle}`,
-          start: correctedUTC(jsDate, 8, 0),
-          end: correctedUTC(jsDate, 13, 0)
+          start: toUTC(jsDate, 8, 0),
+          end: toUTC(jsDate, 13, 0),
         });
       }
 
@@ -100,8 +103,8 @@ app.get("/jr.ics", async (req, res) => {
       if (amSalle) {
         events.push({
           title: `JR — Après‑midi — ${amSalle}`,
-          start: correctedUTC(jsDate, 13, 0),
-          end: correctedUTC(jsDate, 19, 0)
+          start: toUTC(jsDate, 13, 0),
+          end: toUTC(jsDate, 19, 0),
         });
       }
 
@@ -109,27 +112,36 @@ app.get("/jr.ics", async (req, res) => {
       if (soir.includes("JR")) {
         events.push({
           title: `JR — Astreinte du soir`,
-          start: correctedUTC(jsDate, 19, 0),
-          end: correctedUTC(jsDate, 21, 0)
+          start: toUTC(jsDate, 19, 0),
+          end: toUTC(jsDate, 21, 0),
         });
       }
     }
 
-    // ICS simple, sans fuseau, 100 % compatible Google Calendar
+    // Construction ICS
     let ics = `BEGIN:VCALENDAR
 VERSION:2.0
 CALSCALE:GREGORIAN
 METHOD:PUBLISH
+PRODID:-//JR//Planning JR Only//FR
 `;
 
-    for (const ev of events) {
+    const nowStamp = new Date()
+      .toISOString()
+      .replace(/[-:]/g, "")
+      .split(".")[0] + "Z";
+
+    events.forEach((ev, idx) => {
+      const uid = makeUID(ev, idx);
       ics += `BEGIN:VEVENT
+UID:${uid}
+DTSTAMP:${nowStamp}
 SUMMARY:${ev.title}
 DTSTART:${ev.start}
 DTEND:${ev.end}
 END:VEVENT
 `;
-    }
+    });
 
     ics += "END:VCALENDAR";
 
@@ -137,7 +149,7 @@ END:VEVENT
     res.send(ics);
 
   } catch (error) {
-    console.error("Erreur ICS :", error);
+    console.error("Erreur ICS JR :", error);
     res.status(500).send("Erreur interne du serveur ICS");
   }
 });
